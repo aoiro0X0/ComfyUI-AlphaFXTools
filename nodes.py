@@ -171,11 +171,11 @@ class GlowRestoreAndCropSimple:
                 "black_level": (
                     "FLOAT",
                     {
-                        "default": 0.03,
+                        "default": 0.0,
                         "min": 0.0,
                         "max": 0.5,
                         "step": 0.005,
-                        "tooltip": "Suppress black-background noise. Raise it if speckles remain.",
+                        "tooltip": "AE Unmult black point. Raise it only if black-background noise remains.",
                     },
                 ),
                 "edge_overlap": (
@@ -185,7 +185,7 @@ class GlowRestoreAndCropSimple:
                         "min": 0,
                         "max": 128,
                         "step": 1,
-                        "tooltip": "Allow restored glow to overlap the subject edge by this many pixels.",
+                        "tooltip": "Used only when remove_duplicate_subject is enabled.",
                     },
                 ),
                 "effect_strength": (
@@ -207,6 +207,16 @@ class GlowRestoreAndCropSimple:
                     "INT",
                     {"default": 8, "min": 0, "max": 4096, "step": 1},
                 ),
+                "remove_duplicate_subject": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": (
+                            "Off: preserve the complete AE Unmult layer, including effects over the subject. "
+                            "On: suppress the subject area; edge_overlap keeps a narrow overlap band."
+                        ),
+                    },
+                ),
             },
             "optional": {
                 "effect_area_mask": (
@@ -221,9 +231,9 @@ class GlowRestoreAndCropSimple:
     FUNCTION = "restore"
     CATEGORY = "AlphaFXTools"
     DESCRIPTION = (
-        "One-step node for restoring effects lost by background replacement: extracts glow "
-        "from the original black-background image, removes the duplicate subject, composites "
-        "the glow over the keyed subject, and crops the final RGBA."
+        "One-step node for restoring effects lost by background replacement: performs a full "
+        "AE-style Unmult on the original black-background image, optionally limits its area, "
+        "composites it over the keyed subject, and crops the combined alpha bounds."
     )
 
     @staticmethod
@@ -301,6 +311,7 @@ class GlowRestoreAndCropSimple:
         blend_mode,
         crop_threshold,
         padding,
+        remove_duplicate_subject=False,
         effect_area_mask=None,
     ):
         if subject_rgba.ndim != 4 or subject_rgba.shape[-1] not in (3, 4):
@@ -346,24 +357,32 @@ class GlowRestoreAndCropSimple:
             else:
                 subject_alpha = mask
 
-            # Max-RGB unmult is appropriate for emissive effects rendered on black.
+            # Match AE Unmult RGBA's default max_rgb mode. Alpha is first remapped
+            # by the black point, then RGB is unpremultiplied by that final alpha.
             raw_alpha = source.amax(dim=-1)
             extracted_alpha = (
                 (raw_alpha - black_level) / max(1.0 - black_level, 1e-6)
             ).clamp(0.0, 1.0)
             effect_rgb = torch.where(
-                raw_alpha.unsqueeze(-1) > 1e-6,
-                source / raw_alpha.unsqueeze(-1).clamp_min(1e-6),
+                extracted_alpha.unsqueeze(-1) > 1e-6,
+                source / extracted_alpha.unsqueeze(-1).clamp_min(1e-6),
                 torch.zeros_like(source),
             ).clamp(0.0, 1.0)
 
-            # Shrinking the subject exclusion leaves a narrow overlap band so
-            # glow touches the edge without copying the whole subject back in.
-            eroded_subject = self._erode(mask.unsqueeze(0), edge_overlap).squeeze(0)
-            outside_with_overlap = 1.0 - eroded_subject
-            effect_alpha = (
-                extracted_alpha * outside_with_overlap * area * effect_strength
-            ).clamp(0.0, 1.0)
+            # Preserve the complete Unmult layer by default. This is essential
+            # for glow that crosses or sits on top of the subject. The area mask
+            # only limits where restoration is allowed; it does not define crop.
+            effect_alpha = extracted_alpha * area
+
+            # Legacy/optional behavior for users who explicitly want to remove
+            # the duplicated subject from the restored layer.
+            if remove_duplicate_subject:
+                eroded_subject = self._erode(
+                    mask.unsqueeze(0), edge_overlap
+                ).squeeze(0)
+                effect_alpha = effect_alpha * (1.0 - eroded_subject)
+
+            effect_alpha = (effect_alpha * effect_strength).clamp(0.0, 1.0)
 
             output_rgb, output_alpha = self._over(
                 subject, subject_alpha, effect_rgb, effect_alpha, blend_mode
