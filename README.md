@@ -59,7 +59,7 @@ binary_mask: false
 Glow Restore & Crop (Simple)
 ```
 
-它把“黑底 Unmult、排除重复主体、圆形 Mask、辉光合成、最终裁剪”合并为一个节点。
+它把“完整 AE Unmult、可选圆形范围 Mask、辉光合成、最终裁剪”合并为一个节点。
 
 只需要连接：
 
@@ -73,23 +73,28 @@ effect_area_mask     ← 可选的圆形 Mask
 推荐初始参数：
 
 ```text
-black_level: 0.03
+black_level: 0.0
 edge_overlap: 6
 effect_strength: 1.0
 blend_mode: screen
 crop_threshold: 0.02
 padding: 8
+remove_duplicate_subject: false
 ```
 
 输出：
 
 - `rgba`：恢复辉光、重新合成并裁剪后的最终图片；
-- `restored_effect`：节点自动从黑底原图中提取的辉光层，方便检查；
+- `restored_effect`：完整 AE Unmult 层，默认同时保留主体以及覆盖主体、向外延伸的辉光；
 - `final_alpha`：最终合成图片的透明度。
 
 调整建议：
 
 - 黑底噪点多：提高 `black_level`；
-- 主体边缘出现重复影像：降低 `edge_overlap`；
+- 默认保持 `remove_duplicate_subject = false`，这样不会误删覆盖在主体上的辉光；
+- 只有确实需要排除重复主体时才开启 `remove_duplicate_subject`，此时用 `edge_overlap` 控制保留的边缘重叠宽度；
 - 辉光太弱或太强：调整 `effect_strength`；
 - 辉光裁不完整：降低 `crop_threshold` 或提高 `padding`。
+
+`effect_area_mask` 只限制允许恢复特效的区域；最终裁剪框始终根据合成后的
+`final_alpha` 计算，因此会同时包含主体和向外延伸的辉光。
