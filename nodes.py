@@ -217,11 +217,35 @@ class GlowRestoreAndCropSimple:
                         ),
                     },
                 ),
-            },
-            "optional": {
-                "effect_area_mask": (
-                    "MASK",
-                    {"tooltip": "Optional circular mask limiting where glow may be restored."},
+                "use_internal_circle": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Apply a centered circular mask before compositing the restored effect.",
+                    },
+                ),
+                "circle_size": (
+                    "FLOAT",
+                    {
+                        "default": 0.90,
+                        "min": 0.10,
+                        "max": 1.40,
+                        "step": 0.01,
+                        "tooltip": (
+                            "Circle diameter relative to the shorter canvas side. "
+                            "Keep below 1.0 to leave a black margin around every edge."
+                        ),
+                    },
+                ),
+                "circle_feather": (
+                    "INT",
+                    {
+                        "default": 48,
+                        "min": 0,
+                        "max": 1024,
+                        "step": 1,
+                        "tooltip": "Inward feather width in pixels at the circle boundary.",
+                    },
                 ),
             },
         }
@@ -273,6 +297,22 @@ class GlowRestoreAndCropSimple:
         ).squeeze(1)
 
     @staticmethod
+    def _circle_mask(height, width, size, feather, device, dtype):
+        """Centered circle with an inward feather and guaranteed zero outside."""
+        y = torch.arange(height, device=device, dtype=dtype)
+        x = torch.arange(width, device=device, dtype=dtype)
+        center_y = (height - 1) * 0.5
+        center_x = (width - 1) * 0.5
+        distance = torch.sqrt(
+            (y[:, None] - center_y) ** 2 + (x[None, :] - center_x) ** 2
+        )
+        radius = min(height, width) * 0.5 * float(size)
+        feather = min(max(float(feather), 0.0), radius)
+        if feather <= 0.0:
+            return (distance <= radius).to(dtype=dtype)
+        return ((radius - distance) / feather).clamp(0.0, 1.0)
+
+    @staticmethod
     def _over(subject_rgb, subject_alpha, effect_rgb, effect_alpha, blend_mode):
         subject_alpha_1 = subject_alpha.unsqueeze(-1)
         effect_alpha_1 = effect_alpha.unsqueeze(-1)
@@ -312,7 +352,9 @@ class GlowRestoreAndCropSimple:
         crop_threshold,
         padding,
         remove_duplicate_subject=False,
-        effect_area_mask=None,
+        use_internal_circle=True,
+        circle_size=0.90,
+        circle_feather=48,
     ):
         if subject_rgba.ndim != 4 or subject_rgba.shape[-1] not in (3, 4):
             raise ValueError("subject_rgba must be BHWC RGB or RGBA")
@@ -330,14 +372,19 @@ class GlowRestoreAndCropSimple:
             subject_mask.to(device=device, dtype=dtype), height, width
         ).clamp(0.0, 1.0)
 
-        if effect_area_mask is None:
-            effect_area_mask = torch.ones(
+        if use_internal_circle:
+            effect_area = self._circle_mask(
+                height,
+                width,
+                circle_size,
+                circle_feather,
+                device,
+                dtype,
+            ).unsqueeze(0)
+        else:
+            effect_area = torch.ones(
                 (1, height, width), device=device, dtype=dtype
             )
-        else:
-            effect_area_mask = self._resize_mask(
-                effect_area_mask.to(device=device, dtype=dtype), height, width
-            ).clamp(0.0, 1.0)
 
         outputs = []
         effects = []
@@ -347,7 +394,7 @@ class GlowRestoreAndCropSimple:
             source = original_black_image[min(index, original_black_image.shape[0] - 1), ..., :3]
             subject = subject_rgba[index, ..., :3].clamp(0.0, 1.0)
             mask = subject_mask[min(index, subject_mask.shape[0] - 1)]
-            area = effect_area_mask[min(index, effect_area_mask.shape[0] - 1)]
+            area = effect_area[0]
 
             if subject_channels == 4:
                 subject_alpha = subject_rgba[index, ..., 3].clamp(0.0, 1.0)
