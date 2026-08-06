@@ -5,7 +5,7 @@
 当前包含：
 
 - `Image Crop By Mask (True Alpha)`
-- `Glow Restore & Crop (Simple)`
+- `Glow Restore & Crop (Auto)`
 
 它会同时完成两件事：
 
@@ -56,10 +56,10 @@ binary_mask: false
 节点名称：
 
 ```text
-Glow Restore & Crop (Simple)
+Glow Restore & Crop (Auto)
 ```
 
-它把“完整 AE Unmult、可选圆形范围 Mask、辉光合成、最终裁剪”合并为一个节点。
+这是为无人值守自动管线设计的版本。它不使用固定圆形，也不需要针对每张图调参数。
 
 只需要连接：
 
@@ -69,37 +69,20 @@ subject_mask         ← Keylight 的主体 mask
 original_black_image ← 换绿底前的原始黑底特效图
 ```
 
-推荐初始参数：
+节点会自动：
 
-```text
-black_level: 0.0
-edge_overlap: 6
-effect_strength: 1.0
-blend_mode: screen
-crop_threshold: 0.02
-padding: 8
-remove_duplicate_subject: false
-use_internal_circle: true
-circle_size: 0.90
-circle_feather: 48
-```
+1. 从画布边缘估算每张图的真实黑底亮度；
+2. 根据 `subject_mask` 的大小和形状生成自适应特效范围；
+3. 完整保留主体附近的弱辉光，对远处像素使用亮度和颜色置信度过滤；
+4. 将原始画布四边平滑归零，避免上下或左右直线；
+5. 限制特效最多把裁剪框扩张到主体外约 25%，让主体保持靠近输出边缘；
+6. 根据主体尺寸自动计算少量透明安全边距。
 
 输出：
 
 - `rgba`：恢复辉光、重新合成并裁剪后的最终图片；
-- `restored_effect`：完整 AE Unmult 层，默认同时保留主体以及覆盖主体、向外延伸的辉光；
+- `restored_effect`：经过自动黑底估算、内容过滤和自适应范围限制后的特效层；
 - `final_alpha`：最终合成图片的透明度。
 
-调整建议：
-
-- 黑底噪点多：提高 `black_level`；
-- 默认保持 `remove_duplicate_subject = false`，这样不会误删覆盖在主体上的辉光；
-- 只有确实需要排除重复主体时才开启 `remove_duplicate_subject`，此时用 `edge_overlap` 控制保留的边缘重叠宽度；
-- `circle_size`：内置圆形直径相对于画布短边的比例；小于 `1.0` 会在四周留下安全距离，避免圆形被画布裁成直线；
-- `circle_feather`：圆形边缘向内羽化的像素宽度，数值越大过渡越柔和；
-- 不需要圆形限制时关闭 `use_internal_circle`；节点不再需要外接圆形 Mask；
-- 辉光太弱或太强：调整 `effect_strength`；
-- 辉光裁不完整：降低 `crop_threshold` 或提高 `padding`。
-
-内置圆形只限制允许恢复特效的区域；最终裁剪框始终根据合成后的 `final_alpha`
-计算，因此会同时包含主体和向外延伸的辉光。
+自动策略偏向干净、稳定的批量输出。距离主体非常远且亮度很弱的像素可能被舍弃，
+这是为了避免模板辅助线、灰边和背景噪声进入最终结果。
