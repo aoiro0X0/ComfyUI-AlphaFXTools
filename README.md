@@ -1,6 +1,11 @@
-# Image Crop By Mask (True Alpha)
+# ComfyUI AlphaFXTools
 
-这是一个独立的 ComfyUI 自定义节点，用来替换 KJNodes 的 `Image Crop By Mask`。
+用于真透明裁剪、Alpha 清理和黑底辉光恢复的 ComfyUI 节点工具集。
+
+当前包含：
+
+- `Image Crop By Mask (True Alpha)`
+- `Glow Restore & Crop (Simple)`
 
 它会同时完成两件事：
 
@@ -9,7 +14,7 @@
 
 ## 安装
 
-把整个 `ComfyUI-CropByMaskTrueAlpha` 文件夹复制到：
+把整个 `ComfyUI-AlphaFXTools` 文件夹复制到：
 
 ```text
 ComfyUI/custom_nodes/
@@ -45,3 +50,46 @@ binary_mask: false
 - `cropped_mask`：同步裁剪后的 Mask。
 
 图片文件本身仍然必须是矩形；所谓“沿物体轮廓裁剪”是通过矩形画布加 Alpha 透明通道实现的。
+
+## 一步恢复辉光并裁剪
+
+节点名称：
+
+```text
+Glow Restore & Crop (Simple)
+```
+
+它把“黑底 Unmult、排除重复主体、圆形 Mask、辉光合成、最终裁剪”合并为一个节点。
+
+只需要连接：
+
+```text
+subject_rgba         ← Klein 换绿底后经过 Keylight 的 image_rgba
+subject_mask         ← Keylight 的主体 mask
+original_black_image ← 换绿底前的原始黑底特效图
+effect_area_mask     ← 可选的圆形 Mask
+```
+
+推荐初始参数：
+
+```text
+black_level: 0.03
+edge_overlap: 6
+effect_strength: 1.0
+blend_mode: screen
+crop_threshold: 0.02
+padding: 8
+```
+
+输出：
+
+- `rgba`：恢复辉光、重新合成并裁剪后的最终图片；
+- `restored_effect`：节点自动从黑底原图中提取的辉光层，方便检查；
+- `final_alpha`：最终合成图片的透明度。
+
+调整建议：
+
+- 黑底噪点多：提高 `black_level`；
+- 主体边缘出现重复影像：降低 `edge_overlap`；
+- 辉光太弱或太强：调整 `effect_strength`；
+- 辉光裁不完整：降低 `crop_threshold` 或提高 `padding`。
