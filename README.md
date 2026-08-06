@@ -67,7 +67,6 @@ Glow Restore & Crop (Simple)
 subject_rgba         ← Klein 换绿底后经过 Keylight 的 image_rgba
 subject_mask         ← Keylight 的主体 mask
 original_black_image ← 换绿底前的原始黑底特效图
-effect_area_mask     ← 可选的圆形 Mask
 ```
 
 推荐初始参数：
@@ -80,6 +79,9 @@ blend_mode: screen
 crop_threshold: 0.02
 padding: 8
 remove_duplicate_subject: false
+use_internal_circle: true
+circle_size: 0.90
+circle_feather: 48
 ```
 
 输出：
@@ -93,8 +95,11 @@ remove_duplicate_subject: false
 - 黑底噪点多：提高 `black_level`；
 - 默认保持 `remove_duplicate_subject = false`，这样不会误删覆盖在主体上的辉光；
 - 只有确实需要排除重复主体时才开启 `remove_duplicate_subject`，此时用 `edge_overlap` 控制保留的边缘重叠宽度；
+- `circle_size`：内置圆形直径相对于画布短边的比例；小于 `1.0` 会在四周留下安全距离，避免圆形被画布裁成直线；
+- `circle_feather`：圆形边缘向内羽化的像素宽度，数值越大过渡越柔和；
+- 不需要圆形限制时关闭 `use_internal_circle`；节点不再需要外接圆形 Mask；
 - 辉光太弱或太强：调整 `effect_strength`；
 - 辉光裁不完整：降低 `crop_threshold` 或提高 `padding`。
 
-`effect_area_mask` 只限制允许恢复特效的区域；最终裁剪框始终根据合成后的
-`final_alpha` 计算，因此会同时包含主体和向外延伸的辉光。
+内置圆形只限制允许恢复特效的区域；最终裁剪框始终根据合成后的 `final_alpha`
+计算，因此会同时包含主体和向外延伸的辉光。
