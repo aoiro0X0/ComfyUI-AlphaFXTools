@@ -48,7 +48,7 @@ class ImageCropByMaskTrueAlpha:
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("rgba", "cropped_mask")
     FUNCTION = "crop"
-    CATEGORY = "image/crop"
+    CATEGORY = "AlphaFXTools"
     DESCRIPTION = (
         "Crops to the mask bounding box and writes the mask into a true alpha channel. "
         "Low mask values can be cleared to remove faint transparent haze."
@@ -219,7 +219,7 @@ class GlowRestoreAndCropSimple:
     RETURN_TYPES = ("IMAGE", "IMAGE", "MASK")
     RETURN_NAMES = ("rgba", "restored_effect", "final_alpha")
     FUNCTION = "restore"
-    CATEGORY = "image/crop"
+    CATEGORY = "AlphaFXTools"
     DESCRIPTION = (
         "One-step node for restoring effects lost by background replacement: extracts glow "
         "from the original black-background image, removes the duplicate subject, composites "
